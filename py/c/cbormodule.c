@@ -1,5 +1,4 @@
 #include "Python.h"
-
 #include "cbor.h"
 
 #include <math.h>
@@ -377,6 +376,10 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
             if (out == NULL) {
                 PyErr_SetString(PyExc_RuntimeError, "unknown error decoding VAR ARRAY");
             }
+        PyObject* outWrapper = NULL;
+        outWrapper = PyTuple_New(1);
+        PyTuple_SetItem(outWrapper, 0, out);
+        return outWrapper;
 	} else {
             unsigned int i;
 	    out = PyList_New((Py_ssize_t)aux);
@@ -390,7 +393,7 @@ PyObject* inner_loads_c(Reader* rin, uint8_t c) {
                 PyErr_SetString(PyExc_RuntimeError, "unknown error decoding ARRAY");
             }
 	}
-        return out;
+        return out; // HOLY GRAILI
     case CBOR_MAP:
 	out = PyDict_New();
 	if (cbor_info == CBOR_VAR_FOLLOWS) {
@@ -1146,7 +1149,7 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
     } else if (PyDict_Check(ob)) {
 	int err = dumps_dict(ob, out, &pos);
 	if (err != 0) { return err; }
-    } else if (PyList_Check(ob)) {
+    } else if (PyList_CheckExact(ob)) {
         Py_ssize_t i;
 	Py_ssize_t listlen = PyList_Size(ob);
 	tag_aux_out(CBOR_ARRAY, listlen, out, &pos);
@@ -1154,6 +1157,15 @@ static int inner_dumps(PyObject* ob, uint8_t* out, uintptr_t* posp) {
 	    int err = inner_dumps(PyList_GetItem(ob, i), out, &pos);
 	    if (err != 0) { return err; }
 	}
+    } else if (PyList_Check(ob)) { // interpret subtyped lists as var length 
+    	Py_ssize_t i;
+	Py_ssize_t listlen = PyList_Size(ob);
+	tag_aux_out(CBOR_ARRAY | CBOR_INFO_BITS, 0, out, &pos);
+	for (i = 0; i < listlen; i++) {
+	    int err = inner_dumps(PyList_GetItem(ob, i), out, &pos);
+	    if (err != 0) { return err; }
+	}
+	tag_aux_out(CBOR_BREAK, 0, out, &pos);
     } else if (PyTuple_Check(ob)) {
         Py_ssize_t i;
 	Py_ssize_t listlen = PyTuple_Size(ob);
